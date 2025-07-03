@@ -1,14 +1,9 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { Transaction, AiParsedTransaction, MainCategory, AiChatCompletion, Budget } from '../types';
 import { MAIN_CATEGORIES, SUGGESTED_EXPENSE_TAGS, SUGGESTED_INCOME_TAGS } from '../constants';
+import { db } from "../firebase";
 
-// ✅ Use Vite-style env check
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-if (!apiKey) {
-  console.warn("VITE_GEMINI_API_KEY is not set. Gemini API calls will fail.");
-}
-
 const ai = new GoogleGenAI({ apiKey });
 
 const parseJsonResponse = <T,>(text: string): T | null => {
@@ -20,8 +15,7 @@ const parseJsonResponse = <T,>(text: string): T | null => {
   }
   try {
     return JSON.parse(jsonStr) as T;
-  } catch (e) {
-    console.error("Failed to parse JSON response:", e, "Original text:", text);
+  } catch {
     return null;
   }
 };
@@ -34,10 +28,35 @@ export const getAiChatResponse = async (
   mimeType?: string
 ): Promise<AiChatCompletion | null> => {
   const systemInstruction = `
-    You are AjmalFin AI, a playful, sharp, and super-helpful financial sidekick! Your mission is to make logging finances fast and conversational.
-    ...
-    OUTPUT FORMAT:
-    ...
+    You are AjmalFin AI, a playful, sharp, and helpful financial assistant.
+    Read the user's input (text or image) and extract transaction data.
+
+    CONTEXT:
+    - Categories: ${MAIN_CATEGORIES.join(', ')}.
+    - Income tags: ${JSON.stringify(SUGGESTED_INCOME_TAGS)}
+    - Expense tags: ${JSON.stringify(SUGGESTED_EXPENSE_TAGS)}
+    - Recent transactions: ${JSON.stringify(recentTransactions.slice(0, 10))}
+    - Budgets: ${JSON.stringify(budgets)}
+    - Date: ${new Date().toISOString().split("T")[0]}
+
+    OUTPUT:
+    - If unclear: { "type": "chat", "message": "Ask user", "transactions": null }
+    - If valid: {
+        "type": "confirmation",
+        "message": "Summary of what will be logged",
+        "transactions": [
+          {
+            "amount": 123.45,
+            "type": "expense",
+            "mainCategory": "Personal",
+            "subCategory": "Shopping",
+            "payee": "Lulu",
+            "date": "YYYY-MM-DD",
+            "medium": "card",
+            "notes": "optional"
+          }
+        ]
+      }
   `;
 
   const contents = [];
@@ -54,23 +73,20 @@ export const getAiChatResponse = async (
       contents: { parts: contents },
       config: {
         systemInstruction,
-        responseMimeType: "application/json",
-      },
+        responseMimeType: "application/json"
+      }
     });
 
     const parsed = parseJsonResponse<AiChatCompletion>(response.text);
+
     if (!parsed) {
-      return {
-        type: 'error',
-        message: "Sorry, I had trouble understanding that. Could you rephrase?",
-        transactions: null,
-      };
+      return { type: "error", message: "Couldn't understand. Try again?", transactions: null };
     }
 
     if (parsed.type === 'confirmation' && parsed.transactions) {
       parsed.transactions.forEach(tx => {
-        if (tx.mainCategory && !MAIN_CATEGORIES.includes(tx.mainCategory)) {
-          tx.notes = (tx.notes || '') + ` | Original category suggestion: ${tx.mainCategory}. Please review.`;
+        if (!MAIN_CATEGORIES.includes(tx.mainCategory)) {
+          tx.notes = (tx.notes || '') + ` | original category: ${tx.mainCategory}`;
           tx.mainCategory = 'Personal';
         }
       });
@@ -78,12 +94,8 @@ export const getAiChatResponse = async (
 
     return parsed;
   } catch (error) {
-    console.error("Error getting AI Chat response:", error);
-    return {
-      type: 'error',
-      message: "I'm having trouble connecting to my brain right now. Please try again in a moment.",
-      transactions: null,
-    };
+    console.error("AI error:", error);
+    return { type: "error", message: "Gemini failed to respond.", transactions: null };
   }
 };
 
@@ -93,64 +105,58 @@ export const processBulkFiles = async (
 ): Promise<AiParsedTransaction[]> => {
   const allParsedTransactions: AiParsedTransaction[] = [];
 
-  const imagePdfPrompt = `...`;
-  const csvPrompt = `...`;
+  const imagePdfPrompt = `
+    You are an AI assistant that extracts transaction data from uploaded documents like receipts, statements, or reports.
+
+    RULES:
+    1. Read the file and extract valid transactions (amount, date, category, payee).
+    2. Guess category and subcategory using the provided MAIN_CATEGORIES: ${MAIN_CATEGORIES.join(', ')}.
+    3. If you cannot extract any valid transaction, return: []
+
+    Output MUST be a strict JSON array like:
+    [
+      {
+        "amount": 35.00,
+        "type": "expense",
+        "mainCategory": "Personal",
+        "subCategory": "Dining",
+        "payee": "Starbucks",
+        "date": "2025-07-03",
+        "medium": "card",
+        "notes": "From uploaded image"
+      }
+    ]
+  `;
 
   for (const file of fileData) {
-    let prompt = '';
     const contents = [];
+    const mimeType = file.type === 'pdf' ? 'application/pdf' : `image/${file.name.split('.').pop()}`;
 
-    if (file.type === 'csv') {
-      prompt = csvPrompt.replace('{csvText}', file.content);
-      contents.push({ text: prompt });
-    } else {
-      prompt = imagePdfPrompt;
-      const mimeType = file.type === 'pdf' ? 'application/pdf' : `image/${file.name.split('.').pop()}`;
-      contents.push({ inlineData: { data: file.content, mimeType } });
-      contents.push({ text: "Extract transactions from this document." });
-    }
+    contents.push({ inlineData: { data: file.content, mimeType } });
+    contents.push({ text: imagePdfPrompt });
 
     try {
       const response: GenerateContentResponse = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-04-17",
         contents: { parts: contents },
-        config: {
-          ...(file.type === 'csv' && { systemInstruction: prompt }),
-          responseMimeType: "application/json",
-        },
+        config: { responseMimeType: "application/json" },
       });
 
       const parsed = parseJsonResponse<AiParsedTransaction[]>(response.text);
 
       if (parsed && Array.isArray(parsed)) {
         parsed.forEach(tx => {
-          if (tx.amount && tx.type && tx.date) {
-            tx.sourceFile = file.name;
-            tx.status = 'new';
-
-            const isDuplicate = recentTransactions.some(existingTx =>
-              existingTx.amount === tx.amount &&
-              new Date(existingTx.date).toDateString() === new Date(tx.date!).toDateString() &&
-              (existingTx.payee === tx.payee || existingTx.subCategory === tx.subCategory)
-            );
-
-            if (isDuplicate) {
-              tx.status = 'duplicate';
-            }
-
-            if (tx.mainCategory && !MAIN_CATEGORIES.includes(tx.mainCategory)) {
-              tx.notes = (tx.notes || '') + ` | Original category: ${tx.mainCategory}.`;
-              tx.mainCategory = 'Personal';
-            }
-
-            allParsedTransactions.push(tx);
+          if (!tx.mainCategory || !MAIN_CATEGORIES.includes(tx.mainCategory)) {
+            tx.mainCategory = "Personal";
+            tx.notes = (tx.notes || "") + " | category auto-corrected";
           }
+          tx.sourceFile = file.name;
+          tx.status = 'new';
+          allParsedTransactions.push(tx);
         });
-      } else {
-        console.warn(`Could not parse response for file ${file.name} as an array. Response:`, response.text);
       }
-    } catch (error) {
-      console.error(`Error processing file ${file.name}:`, error);
+    } catch (err) {
+      console.error(`❌ AI failed to process file ${file.name}`, err);
     }
   }
 
@@ -162,23 +168,28 @@ export const getAIInsights = async (transactions: Transaction[]): Promise<string
     return "Not enough data for insights. Please add more transactions.";
   }
 
-  const sanitizedData = transactions.map(({ type, mainCategory, subCategory, amount, date }) => ({
-    type, mainCategory, subCategory, amount, date
+  const sanitized = transactions.map(t => ({
+    amount: t.amount,
+    type: t.type,
+    mainCategory: t.mainCategory,
+    subCategory: t.subCategory,
+    date: t.date
   }));
 
   const prompt = `
-    You are a financial analyst for a gym owner. Based on the following JSON data of recent transactions, provide 3 brief, actionable insights...
+    You are a financial assistant. Based on this transaction history, give 3 helpful insights.
+    ${JSON.stringify(sanitized, null, 2)}
   `;
 
   try {
-    const response: GenerateContentResponse = await ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-04-17",
-      contents: prompt,
+      contents: prompt
     });
 
     return response.text;
-  } catch (error) {
-    console.error("Error getting AI insights:", error);
-    return "Sorry, I couldn't generate insights at this moment.";
+  } catch (err) {
+    console.error("AI insight generation failed:", err);
+    return null;
   }
 };
