@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AjmalFin</title>
+    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'light-bg': '#f7f9fc',
+              'light-card': '#ffffff',
+              'light-text': '#111827',
+              'light-subtext': '#6b7280',
+              'light-accent': '#84cc16', // lime-500
+              'light-income': '#16a34a', // green-600
+              'light-expense': '#dc2626', // red-600
+
+              'dark-bg': '#0c0c0c',
+              'dark-card': '#1a1a1a',
+              'dark-text': '#e5e5e5',
+              'dark-subtext': '#a3a3a3',
+              'dark-accent': '#bef264', // lime-300 (Lemon Green)
+              'dark-income': '#4ade80', // green-400
+              'dark-expense': '#f87171', // red-400
+              
+              'accent-lemon': '#bef264',
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            animation: {
+              'shake': 'shake 0.5s ease-in-out',
+            },
+            keyframes: {
+              shake: {
+                '0%, 100%': { transform: 'translateX(0)' },
+                '25%': { transform: 'translateX(-5px)' },
+                '75%': { transform: 'translateX(5px)' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.6.3",
+    "date-fns": "https://esm.sh/date-fns@^4.1.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.8.0",
+    "firebase/": "https://esm.sh/firebase@^11.10.0/",
+    "papaparse": "https://esm.sh/papaparse@5.4.1",
+    "react-dropzone": "https://esm.sh/react-dropzone@14.2.3",
+    "date-fns/": "https://esm.sh/date-fns@^4.1.0/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="antialiased font-sans">
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "AjmalFin AI",
+  "description": "A personal finance management app for a gym owner with multiple income/expense streams. It features voice-based interaction, local data storage, OCR for receipts, and AI-powered insights.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "prompt": ""
+}
